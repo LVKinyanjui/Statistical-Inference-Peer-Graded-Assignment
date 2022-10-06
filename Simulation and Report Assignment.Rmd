@@ -1,0 +1,169 @@
+
+## Abstract
+In this project we shall investigate the exponential distribution in R and compare it with the Central Limit Theorem.
+
+```{r}
+library(magrittr)
+library(ggplot2)
+
+```
+
+## Visualizing the exponential
+The exponential distribution can be considered as the *continuous* form of the poisson distribution, which is *discrete*. They even have the same quantity, *lambda*, that determines their mean and variance. By discrete we mean that the Poisson random variable only takes rational values. It will serve us well to see this for ourselves.
+
+```{r}
+
+rexp(N, lambda) %>% hist(main = "Exponential distribution", freq = FALSE)
+rpois(N, lambda) %>% hist(main = "Poisson Distribution", freq = FALSE)
+
+```
+
+
+### Sample and Mean
+We will sample from the exponential distribution  and compare its mean with the theoretical mean. The procedure consists in taking 40 samples from rexp(), then taking their mean (I am using the pipeline operator %>% a lot here). Then we repeat this step 1000 times and create a distribution from this. This is what we are calling the **sampling distribution**.
+
+```{r, cache = TRUE}
+set.seed(123)
+lambda = 0.2
+
+sample_of_means = replicate(1000, rexp(n = 40, lambda) %>% mean) %>%
+                    as.data.frame
+emp_mean = mean(sample_of_means$.)
+emp_variance = var(sample_of_means$.)
+
+```
+
+## Sample and Variance
+The sampling distribution of the variance seems to be skewed and not gaussian. It is no wonder that it is not touched on in the lectures. Perhaps it is not as important as that of the mean.
+```{r}
+
+replicate(1000, rexp(n = 40, lambda) %>% var) %>%
+                    as.data.frame %>%
+    ggplot(aes(.)) +
+    geom_histogram(bins = 50)
+
+#sapply(10:100, function(x){rexp(n = 40, x) %>% var}) %>% plot
+
+
+```
+
+
+So the mean of this sampling distribution is given by `r emp_mean`, which should be pretty close to the actual mean of the exponential distribution `r 1/lambda`. The sampling distribution variance = `r emp_variance` has its square root as the standard error to the mean. It has (I believe), nothing to do with the variance of the exponential distribution itself. That variance, = `r 1/lambda^2`. This accounts for the drastic difference between the two.
+
+### The Sampling Distribution and the Normal
+The distribution should be roughly normal. The more we sample the means (n), the more this sampling distribution approximates the Gaussian.
+
+```{r}
+#Plotting
+  ggplot(sample_of_means, aes(.)) +
+    geom_histogram() +
+    geom_vline(xintercept = emp_mean)
+m = 10000  
+rnorm(m, mean = 1/lambda, sd = 1) %>% as.data.frame %>%
+  ggplot(aes(.)) +
+  geom_histogram(main = "The Normal Distribution") +
+  geom_vline(xintercept = emp_mean, bins = 50)
+```
+# Part 2
+This section will be concerned with using statistical techniques to analyse data; the ToothGrowth data in the R datasets package.
+
+```{r}
+library(datasets)
+library(dplyr)
+```
+
+## Summary
+The data consists of three variables. The len and dose variables are essentially factor variables with 2 and 3 levels respectively.
+
+```{r}
+str(ToothGrowth)
+table(ToothGrowth[, 2:3])
+```
+
+
+First we shall investigate the distribution of teeth length. There are sixty teeth of differing lengths.
+
+```{r}
+ggplot(ToothGrowth, aes(len)) +
+  geom_histogram() +
+  ggtitle("Tooth Distribution") +
+  geom_vline(xintercept = mean(ToothGrowth$len))
+
+# Bar plot showing length pert tooth
+ggplot(ToothGrowth, 
+       aes(y = len, x = 1:nrow(ToothGrowth))
+       ) +
+  geom_bar(stat = "identity") +
+  ggtitle("Bar Plot of Lengths") +
+  xlab("Count") +
+  ylab("Length")
+
+
+```
+
+## Hypothesis Testing
+We are going to Use confidence intervals and/or hypothesis tests to compare tooth growth by supp and dose.
+
+### Facet Plots
+Now we delve into the details of the distribution to see the composition by factor variable.
+```{r}
+#Making dose a factor type variable
+ToothGrowth = mutate(ToothGrowth, dose = as.factor(dose))
+
+# Factoring by supp
+  ggplot(ToothGrowth, aes(len, fill = supp)) +
+    geom_histogram(position = "dodge")
+
+# Factoring by dose
+  ggplot(ToothGrowth, aes(len, fill = dose)) +
+    geom_histogram(position = "dodge")
+
+```
+
+### Testing
+Now that we have gotten a preliminary view of our data, we can then proceed to the creation of hypotheses.
+Our null hypothesis, H0 : None of the dosage methods(dose) or vitamin levels (supp) have any effect on the length variable.
+We shall have our significance level alpha = 0.05
+
+#### Vitamin Levels 
+We arbitrarily take one group as the control, in our case, the orange juice group
+```{r}
+oj = filter(ToothGrowth, supp == "OJ") # Oeange juice group
+vc = filter(ToothGrowth, supp == "VC") # Vitamin C group
+
+# T testing, one sided test
+# t.test returns a named list
+## We can reference each of these elements
+t_test =  t.test(vc$len, oj$len, paired = TRUE, var.equal = TRUE, 
+                 conf.level = .95, alternative = "two.sided"
+       )
+
+```
+
+We have done a one sided test, a decision prompted by the fact that the interval excludes zero and is in the negative (I ran a two sided test first, then from those results I modified tht test). Now let's visualize !
+
+```{r}
+# Visualizing
+  p = rt(10000, df = t_test$parameter, ncp = t_test$estimate) %>% 
+    as.data.frame %>%
+  
+    ggplot(aes(.)) +
+      geom_histogram(bins = 50, alpha = 0.5, fill = "Brown") +
+      geom_vline(xintercept = (t_test$estimate + t_test$statistic), 
+                 col="Blue") +
+      geom_vline(xintercept = t_test$conf.int[1], size = 2)
+
+# Add text
+annotation <- data.frame(
+   x = c(-7.7, -4.4),
+   y = c(1000, 1000),
+   label = c("p_Value", "5% significance level")
+)
+
+p + geom_text(data=annotation, aes( x=x, y=y, label=label), 
+           color="black" )
+```
+The p_value `r t_test$p.value` is far less than our significance level, 0.05 and so we reject the null hypothesis. The conclusion is that there is indeed a difference between the two groups if we regard the observations to be paired
+
+### Dosage Methods
+
