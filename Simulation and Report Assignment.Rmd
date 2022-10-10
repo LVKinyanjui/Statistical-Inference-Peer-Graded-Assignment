@@ -1,21 +1,37 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
 
 ## Abstract
 In this project we shall investigate the exponential distribution in R and compare it with the Central Limit Theorem.
+Next, we shall perform hypothesis testing on data.
 
 ```{r}
+library(datasets)
+library(dplyr)
 library(magrittr)
 library(ggplot2)
 
 ```
 
 ## Visualizing the exponential
-The exponential distribution can be considered as the *continuous* form of the poisson distribution, which is *discrete*. They even have the same quantity, *lambda*, that determines their mean and variance. By discrete we mean that the Poisson random variable only takes rational values. It will serve us well to see this for ourselves.
+The exponential distribution can be considered as the *continuous* form of the poisson distribution, which is *discrete*. They even have the same quantity, *lambda*, that determines their mean and variance. By discrete we mean that the Poisson random variable only takes rational values (numbers that are not irrational eg. not pi). It will serve us well to see this for ourselves.
 
 ```{r}
+N = 10000
+lambda = 0.2
 
-rexp(N, lambda) %>% hist(main = "Exponential distribution", freq = FALSE)
-rpois(N, lambda) %>% hist(main = "Poisson Distribution", freq = FALSE)
+rexp(N, lambda) %>% as.data.frame %>%
+  ggplot(aes(.)) +
+  geom_histogram() +
+  labs(title = "Exponential distribution", tag = "A1")
 
+rpois(N, lambda) %>% as.data.frame %>%
+  ggplot(aes(.)) +
+  geom_histogram() +
+  labs(title = "Poisson distribution", tag = "A2")
 ```
 
 
@@ -33,20 +49,17 @@ emp_variance = var(sample_of_means$.)
 
 ```
 
-## Sample and Variance
+## Variance
 The sampling distribution of the variance seems to be skewed and not gaussian. It is no wonder that it is not touched on in the lectures. Perhaps it is not as important as that of the mean.
 ```{r}
 
 replicate(1000, rexp(n = 40, lambda) %>% var) %>%
                     as.data.frame %>%
     ggplot(aes(.)) +
-    geom_histogram(bins = 50)
-
-#sapply(10:100, function(x){rexp(n = 40, x) %>% var}) %>% plot
-
+    geom_histogram(bins = 50) +
+    labs(title = "Sampling Distribution of the Variance", tag = "B")
 
 ```
-
 
 So the mean of this sampling distribution is given by `r emp_mean`, which should be pretty close to the actual mean of the exponential distribution `r 1/lambda`. The sampling distribution variance = `r emp_variance` has its square root as the standard error to the mean. It has (I believe), nothing to do with the variance of the exponential distribution itself. That variance, = `r 1/lambda^2`. This accounts for the drastic difference between the two.
 
@@ -55,24 +68,31 @@ The distribution should be roughly normal. The more we sample the means (n), the
 
 ```{r}
 #Plotting
+## Sample distribution
   ggplot(sample_of_means, aes(.)) +
     geom_histogram() +
-    geom_vline(xintercept = emp_mean)
+    geom_vline(xintercept = emp_mean) +
+    geom_vline(xintercept = emp_mean + c(2, -2) * sqrt(emp_variance), 
+               col = "Red") +
+    labs(title = "The Sampling Distribution", tag = "C1")
+    
+
+## Normal distribution
 m = 10000  
 rnorm(m, mean = 1/lambda, sd = 1) %>% as.data.frame %>%
   ggplot(aes(.)) +
-  geom_histogram(main = "The Normal Distribution") +
-  geom_vline(xintercept = emp_mean, bins = 50)
+  geom_histogram(fill = "Blue", alpha = 0.5) +
+  geom_vline(xintercept = emp_mean) +
+  labs(title = "The Normal Distribution", tag = "C2")
+ 
 ```
+
+The red lines show the 95% confidence interval. 
+
 # Part 2
-This section will be concerned with using statistical techniques to analyse data; the ToothGrowth data in the R datasets package.
+This section will be concerned with using statistical techniques to analyse data; the ToothGrowth data in the R datasets package. It measures the length of odontoblasts (cells responsible for tooth growth) in response to dosage levels and how said doses are administered. 
 
-```{r}
-library(datasets)
-library(dplyr)
-```
-
-## Summary
+## Exploratory Analysis
 The data consists of three variables. The len and dose variables are essentially factor variables with 2 and 3 levels respectively.
 
 ```{r}
@@ -86,7 +106,7 @@ First we shall investigate the distribution of teeth length. There are sixty tee
 ```{r}
 ggplot(ToothGrowth, aes(len)) +
   geom_histogram() +
-  ggtitle("Tooth Distribution") +
+  labs(title = "Length Distribution", tag = "D1") +
   geom_vline(xintercept = mean(ToothGrowth$len))
 
 # Bar plot showing length pert tooth
@@ -94,7 +114,7 @@ ggplot(ToothGrowth,
        aes(y = len, x = 1:nrow(ToothGrowth))
        ) +
   geom_bar(stat = "identity") +
-  ggtitle("Bar Plot of Lengths") +
+  labs(title = "Bar Plot of Lengths", tag = "D2") +
   xlab("Count") +
   ylab("Length")
 
@@ -112,13 +132,17 @@ ToothGrowth = mutate(ToothGrowth, dose = as.factor(dose))
 
 # Factoring by supp
   ggplot(ToothGrowth, aes(len, fill = supp)) +
-    geom_histogram(position = "dodge")
+    geom_histogram(position = "dodge") +
+    labs(title = "Factoring by Dose Type", tag = "E1")
 
 # Factoring by dose
   ggplot(ToothGrowth, aes(len, fill = dose)) +
-    geom_histogram(position = "dodge")
+    geom_histogram(position = "dodge") +
+    labs(title = "Factoring by Dose Level", tag = "E2")
 
 ```
+
+From the dose factored histogram it is possible to infer that greater dosage is correlated wiith greater length on average. That is a cursory observation that will be tested later.
 
 ### Testing
 Now that we have gotten a preliminary view of our data, we can then proceed to the creation of hypotheses.
@@ -126,21 +150,22 @@ Our null hypothesis, H0 : None of the dosage methods(dose) or vitamin levels (su
 We shall have our significance level alpha = 0.05
 
 #### Vitamin Levels 
-We arbitrarily take one group as the control, in our case, the orange juice group
+
 ```{r}
 oj = filter(ToothGrowth, supp == "OJ") # Oeange juice group
 vc = filter(ToothGrowth, supp == "VC") # Vitamin C group
 
-# T testing, one sided test
 # t.test returns a named list
 ## We can reference each of these elements
+alt = "two.sided"
 t_test =  t.test(vc$len, oj$len, paired = TRUE, var.equal = TRUE, 
-                 conf.level = .95, alternative = "two.sided"
+                 conf.level = .95, alternative = alt
        )
 
 ```
+We arbitrarily take one group as the control, in our case, the orange juice group. We are carrying out a `r alt` test
 
-We have done a one sided test, a decision prompted by the fact that the interval excludes zero and is in the negative (I ran a two sided test first, then from those results I modified tht test). Now let's visualize !
+It will be helpful to visualize this
 
 ```{r}
 # Visualizing
@@ -151,19 +176,44 @@ We have done a one sided test, a decision prompted by the fact that the interval
       geom_histogram(bins = 50, alpha = 0.5, fill = "Brown") +
       geom_vline(xintercept = (t_test$estimate + t_test$statistic), 
                  col="Blue") +
-      geom_vline(xintercept = t_test$conf.int[1], size = 2)
+      geom_vline(xintercept = t_test$conf.int[1], size = 2) +
+      labs(title = "T-Distribution", tag = "F2")
 
 # Add text
 annotation <- data.frame(
    x = c(-7.7, -4.4),
    y = c(1000, 1000),
-   label = c("p_Value", "5% significance level")
+   label = c("p-Value", "5% significance level")
 )
 
 p + geom_text(data=annotation, aes( x=x, y=y, label=label), 
            color="black" )
 ```
-The p_value `r t_test$p.value` is far less than our significance level, 0.05 and so we reject the null hypothesis. The conclusion is that there is indeed a difference between the two groups if we regard the observations to be paired
+
+The p_value `r t_test$p.value` is far less than our significance level, 0.05 and so we reject the null hypothesis. The conclusion is that there is indeed a difference between the two groups if we regard the observations to be paired.
+the confidence interval is given by `r t_test$conf.int`
 
 ### Dosage Methods
+
+```{r}
+group_05 = filter(ToothGrowth, dose == "0.5")
+group_1 = filter(ToothGrowth, dose == "1")
+group_2 = filter(ToothGrowth, dose == "2")
+
+test_21 = t.test(group_2$len, group_1$len, paired = TRUE, var.equal = TRUE)
+test_205 = t.test(group_2$len, group_05$len, paired = TRUE, var.equal = TRUE)
+test_105 = t.test(group_1$len, group_05$len, paired = TRUE, var.equal = TRUE)
+```
+
+The point of the code is to do two sample testing between two of the three groups exhaustively; 2 and 1, 2 and 0.5, 1 and 0.5.
+
+The results are as follows
+  - 2 and 1:    `r test_21$p.value`
+  - 2 and 0.5:    `r test_205$p.value`
+  - 1 and 0.5:    `r test_105$p.value`
+
+For all the p value is less than 0.05 so we reject the null and accept the alternative hypothesis; there is a significant difference between all the groups.
+
+# Conclusion
+We concluded that there are meaninful variations in the effect of treatment types and dosage levels. The null is false; the way doses are administered and in what form do in fact affect the length of tooth growing cells. From our exploratory graph by dose factor (see E2), it appears that there is a positive correlation between increasing dosage and cell length. However, that will be better tested by regression. But the takeaway is that the results are significant.
 
